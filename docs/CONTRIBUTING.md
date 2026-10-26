@@ -1,0 +1,176 @@
+---
+layout: default
+title: Contributing
+nav_order: 9
+---
+
+# Contributing
+
+_ViewComponent is intended to be a safe, welcoming space for collaboration. By participating you agree to abide by the [Contributor Code of Conduct](CODE_OF_CONDUCT.md)._
+
+_As of version 4, ViewComponent is considered feature-complete. While contributions are always welcome, we're unlikely to accept further breaking changes or significant feature additions._
+
+Hi there! We're thrilled that you'd like to contribute to ViewComponent. Your help is essential for keeping it great.
+
+If you have any substantial changes that you would like to make, please [open an issue](http://github.com/viewcomponent/view_component/issues/new) first to discuss them with us.
+
+Maintainers tend to focus on areas of the project that are useful to them and their employers, but we're happy to pair with members of the community to enable work on other parts.
+
+Contributions to this project are [released](https://help.github.com/articles/github-terms-of-service/#6-contributions-under-repository-license) to the public under the [MIT license](https://github.com/viewcomponent/view_component/blob/main/LICENSE.txt).
+
+## Slack community
+
+While we prefer using Issues, Discussions, and PRs on GitHub, there is a ViewComponent Slack channel on the Ruby Central workspace: #oss-view-component. Reach out to joelhawksley@github.com for an invite.
+
+## Reporting bugs
+
+When opening an issue to describe a bug, it's helpful to provide steps to reproduce it, either with failing tests in a pull request, or by sharing a repository that demonstrates the issue.
+
+### Creating a Rails application to demonstrate a ViewComponent bug
+
+1. Run `rails new --minimal view_component-bug-replica` in the console.
+2. Run `bundle add view_component` in the console. If testing against a previous version of ViewComponent, update the `Gemfile` to that version and run `bundle install`.
+3. Run `rails generate controller Home index`.
+4. Add `root to: 'home#index'`.
+5. Add as little code as possible that's necessary to reproduce the issue. If possible, use the original code that caused the issue in the application.
+6. Publish the repository and add a link to the bug report issue.
+
+### GitHub Codespaces
+
+This repository includes configuration for GitHub Codespaces, making it easy to set up a cloud-based development environment. Follow [GitHub's guide](https://docs.github.com/en/codespaces/developing-in-codespaces/creating-a-codespace#creating-a-codespace) to get started.
+
+The codespace environment includes a minimal Rails app with ViewComponent installed in the `replicate-bug` directory. To run the application:
+
+1. Start the Rails server from the codespace's terminal with `rails s`.
+2. Expose the port when prompted by the Visual Studio Code Web Editor.
+3. Add the external URL to the config block in `config/application.rb` as prompted by the error.
+
+## Running tests with Appraisal
+
+This project uses [appraisal](https://github.com/thoughtbot/appraisal) to run tests for various versions of Ruby and Rails, and [appraisal-run](https://github.com/camertron/appraisal-run) to run them in Docker containers.
+
+1. Install the dependencies: `bundle`
+2. Make sure the tests pass: `appraisal-run gemfiles/*.gemfile -- bundle exec rake`
+
+When a new version of Rails is released:
+
+1. Add a new `appraise` block in `Appraisals`.
+2. Run `bundle exec appraisal generate`
+3. Update the gemfiles locks `appraisal-run gemfiles/*.gemfile -- bundle lock`
+4. Make sure the tests pass: `appraisal-run gemfiles/*.gemfile -- bundle exec rake`
+5. Commit and push the changes.
+6. Release a new version.
+
+_You main need to run `RUBY_VERSION="4.1.0dev" bundle exec appraisal rails-main bundle lock` to lock the rails-main lockfile._
+
+## Submitting a pull request
+
+1. [Fork](https://github.com/viewcomponent/view_component/fork) and clone the repository.
+2. Make sure the tests pass: `appraisal-run gemfiles/*.gemfile -- bundle exec rake`.
+3. Create a new branch: `git checkout -b my-branch-name`.
+4. Add tests, make the change, and make sure the tests still pass.
+5. Add an entry to the top of `docs/CHANGELOG.md` for the changes, no matter how small.
+6. Push to the fork and [submit a pull request](https://github.com/viewcomponent/view_component/compare).
+7. Wait for the pull request to be reviewed and merged.
+
+### Running a subset of tests
+
+Use [`m`](https://rubygems.org/gems/m):
+
+```command
+bundle exec m test/view_component/YOUR_COMPONENT_test.rb:line_number
+```
+
+### Running tests for a specific version of Rails
+
+Specify one of the supported versions listed in [Appraisals](https://github.com/viewcomponent/view_component/blob/main/Appraisals):
+
+```command
+bundle exec appraisal rails-8.0 rake
+```
+
+### Performance
+
+CI compares each pull request against its base branch on Rails 8.1 and Rails main. For each scenario in `performance/measure.rb`, it divides the component render time by the render time of an equivalent partial. It also boots a production app with 300 generated components and divides the time spent in ViewComponent (requiring it, loading components, and compiling them) by the rest of boot. It fails if any ratio is more than 5% higher than the base branch's ratio.
+
+To run the comparison locally:
+
+```command
+git worktree add tmp/base main
+VIEW_COMPONENT_LIB=tmp/base/lib bundle exec ruby performance/measure.rb tmp/performance/base.json
+bundle exec ruby performance/measure.rb tmp/performance/head.json
+bundle exec ruby performance/compare.rb tmp/performance/base.json tmp/performance/head.json
+```
+
+## Documentation
+
+### Previewing changes locally
+
+1. Navigate to `/docs`.
+1. Configure and install the dependencies: `bundle`.
+1. Run Jekyll: `bundle exec jekyll serve`.
+1. Open the docs site at `http://127.0.0.1:4000/`.
+
+### Style guidelines
+
+- Keep it short.
+- Avoid unclear antecedents. Use `the method name is too long` instead of `it's too long`.
+- Avoid `you`, `we`, `your`, `our`.
+- Write in the [active voice](https://writing.wisc.edu/handbook/style/ccs_activevoice/), avoiding the passive voice.
+- Refer to methods as `#instance_method` and `.class_method`.
+- Use the simplest examples possible.
+
+Don't be afraid to ask for help! We recognize that English isn't the first language of many folks who contribute to ViewComponent.
+
+To run the Vale prose linter locally, `brew install vale` and `vale docs/`.
+
+## Releasing
+
+Releases are automated using GitHub Actions. Here's the process:
+
+1. Go to **Actions** → **Release** → **Run workflow**
+2. Enter the new version numbers (current values are pre-filled):
+   - **major**: Major version number
+   - **minor**: Minor version number
+   - **patch**: Patch version number
+   - **pre**: Optional pre-release label (leave blank for stable release)
+3. Click **Run workflow**
+4. The workflow will:
+   - Create a release branch
+   - Update version files and changelog
+   - Update dependencies
+   - Open a pull request
+5. Review and merge the pull request to main
+6. After merge, the workflow automatically:
+   - Publishes docs to gh-pages
+   - Creates a GitHub release
+   - Pushes the tag to trigger gem publishing
+7. The gem is published to RubyGems automatically via GitHub Actions (requires approval from a maintainer in the "release" environment)
+
+## Governance
+
+ViewComponent is built by over a hundred members of the community. Project membership has several levels:
+
+### Triage
+
+ViewComponent triagers are able to manage issues and pull request by assigning owners and labels, closing issues and marking duplicates.
+
+After helping with the project by participating in issues, pull requests, and/or discussions, members of the community are welcome to request triage access by opening a pull request to update this list:
+
+The triagers team is @reeganviljoen.
+
+### Commit
+
+ViewComponent committers have `write` access, enabling them to push directly to the repository and merge pull requests, thus removing the need to contribute via a fork.
+
+Triagers are welcome to request commit access by opening a pull request to update this list:
+
+There are currently no committers.
+
+### Maintain
+
+ViewComponent maintainers have `admin` access, enabling them to manage repository settings including access levels. They also have ownership of `view_component` on RubyGems. Maintainers are required to have 2FA enabled for their GitHub and RubyGems accounts.
+
+Committers are welcome to request maintainership access by opening a pull request to update this list:
+
+The maintainers team is @finalburn, @spone, @camertron, @blakewilliams, and @joelhawksley.

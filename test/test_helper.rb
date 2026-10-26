@@ -1,0 +1,240 @@
+# frozen_string_literal: true
+
+require "rails/version"
+require "bundler/setup"
+require "pathname"
+require "minitest/autorun"
+require "minitest/memory"
+require "minitest/mock"
+
+Minitest::Test.include(Minitest::Memory)
+
+module Warning
+  PROJECT_ROOT = File.expand_path("..", __dir__).freeze
+
+  def self.warn(message)
+    called_by = caller_locations(1, 1).first.path
+    return super unless called_by&.start_with?(PROJECT_ROOT) && !called_by.start_with?("#{PROJECT_ROOT}/vendor")
+    return if message.include?("Template format for")
+
+    raise "Warning: #{message}"
+  end
+end
+
+# Configure Rails Environment
+ENV["RAILS_ENV"] = "test"
+
+require "view_component/deprecation"
+ViewComponent::Deprecation.behavior = :silence
+
+require File.expand_path("sandbox/config/environment.rb", __dir__)
+require "rails/test_help"
+
+require "capybara/cuprite"
+
+# Rails registers its own driver named "cuprite" which will overwrite the one we
+# register here. Avoid the problem by registering the driver with a distinct name.
+Capybara.register_driver(:system_test_driver) do |app|
+  # Add the process_timeout option to prevent failures due to the browser
+  # taking too long to start up.
+  Capybara::Cuprite::Driver.new(app, {process_timeout: 60, timeout: 30})
+end
+
+# Reduce extra logs produced by puma booting up
+Capybara.server = :puma, {Silent: true}
+# Increase the max wait time to appease test failures due to timeouts.
+Capybara.default_max_wait_time = 30
+
+def with_config_option(option_name, new_value, config_entrypoint: Rails.application.config.view_component)
+  old_value = config_entrypoint.public_send(option_name)
+  config_entrypoint.public_send(:"#{option_name}=", new_value)
+  yield
+ensure
+  config_entrypoint.public_send(:"#{option_name}=", old_value)
+end
+
+# Sets custom preview paths in tests.
+#
+# @param new_value [Array<String>] List of preview paths
+# @yield Test code to run
+# @return [void]
+def with_preview_paths(new_value, &block)
+  with_previews_option(:paths, new_value, &block)
+end
+
+def with_preview_route(new_value, &block)
+  old_value = Rails.application.config.view_component.previews.route
+  Rails.application.config.view_component.previews.route = new_value
+  app.reloader.reload!
+  yield
+ensure
+  Rails.application.config.view_component.previews.route = old_value
+  app.reloader.reload!
+end
+
+def with_preview_controller(new_value, &block)
+  old_value = Rails.application.config.view_component.previews.controller
+  Rails.application.config.view_component.previews.controller = new_value
+  app.reloader.reload!
+  yield
+ensure
+  Rails.application.config.view_component.previews.controller = old_value
+  app.reloader.reload!
+end
+
+def with_custom_component_path(new_value, &block)
+  with_generate_option(:path, new_value, &block)
+end
+
+def with_custom_parent_class(new_value, &block)
+  with_generate_option(:parent_class, new_value, &block)
+end
+
+def with_application_component_class
+  Object.const_set(:ApplicationComponent, Class.new(Object))
+  yield
+ensure
+  Object.send(:remove_const, :ApplicationComponent)
+end
+
+def with_generate_option(config_option, value)
+  old_value = Rails.application.config.view_component.generate[config_option]
+  Rails.application.config.view_component.generate[config_option] = value
+  yield
+ensure
+  Rails.application.config.view_component.generate[config_option] = old_value
+end
+
+def with_previews_option(config_option, value)
+  old_value = Rails.application.config.view_component.previews[config_option]
+  Rails.application.config.view_component.previews[config_option] = value
+  yield
+ensure
+  Rails.application.config.view_component.previews[config_option] = old_value
+end
+
+def with_instrumentation_enabled_option(value)
+  old_value = Rails.application.config.view_component.instrumentation_enabled
+  Rails.application.config.view_component.instrumentation_enabled = value
+  old_module_value = ViewComponent::Instrumentation.enabled
+  ViewComponent::Instrumentation.enabled = value
+  yield
+ensure
+  Rails.application.config.view_component.instrumentation_enabled = old_value
+  ViewComponent::Instrumentation.enabled = old_module_value
+end
+
+def with_generate_sidecar(enabled, &block)
+  with_generate_option(:sidecar, enabled, &block)
+end
+
+def with_new_cache
+  old_cache = ViewComponent::CompileCache.cache
+  ViewComponent::CompileCache.cache = Set.new
+  old_cache_template_loading = ActionView::Base.cache_template_loading
+  ActionView::Base.cache_template_loading = false
+
+  yield
+ensure
+  ActionView::Base.cache_template_loading = old_cache_template_loading
+  # Components compiled in the block were compiled under its settings, such as
+  # coverage or annotations, so make them compile again the next time they render.
+  old_cache.subtract(ViewComponent::CompileCache.cache)
+  ViewComponent::CompileCache.cache = old_cache
+end
+
+def without_template_annotations(&block)
+  old_value = ActionView::Base.annotate_rendered_view_with_filenames
+  ActionView::Base.annotate_rendered_view_with_filenames = false
+  app.reloader.reload! if defined?(app)
+
+  with_new_cache(&block)
+ensure
+  ActionView::Base.annotate_rendered_view_with_filenames = old_value
+  app.reloader.reload! if defined?(app)
+end
+
+def modify_file(file, content)
+  filename = Rails.root.join(file)
+  old_content = File.read(filename)
+  begin
+    File.open(filename, "wb+") { |f| f.write(content) }
+    yield
+  ensure
+    File.open(filename, "wb+") { |f| f.write(old_content) }
+    # A component that rendered while `file` was modified had its
+    # `render_template_for` method defined against the modified source. That
+    # method stays on the class until the compiler runs again, so invalidate
+    # every compiled component's cache entry: the next render of any of them
+    # recompiles from the now-restored file.
+    ViewComponent::CompileCache.invalidate!
+
+    # Restoring a Ruby file leaves a code reload pending. Apply it here, in the
+    # test's own thread: if a system test's server thread picked it up instead,
+    # it would wait for this thread's executor to finish, which never happens
+    # while the test waits on the request.
+    Rails.application.reloader.reload! if File.extname(filename) == ".rb"
+  end
+end
+
+# Rails caches template digests globally and clears them from the reloader on
+# each code reload. Tests that change files on disk have to do the same.
+def clear_digest_cache
+  ActionView::LookupContext::DetailsKey.clear
+end
+
+# Modify a file and assert the block's return value changes while it's modified,
+# clearing Rails' digest cache the way a code reload would.
+def assert_digest_changes(file, content)
+  clear_digest_cache
+  before = yield
+
+  modify_file(file, content) do
+    clear_digest_cache
+    refute_equal before, yield, "Expected the digest to change when #{file} changed"
+  end
+
+  clear_digest_cache
+  assert_equal before, yield, "Expected the digest to be restored when #{file} was restored"
+end
+
+def with_default_preview_layout(layout, &block)
+  with_previews_option(:default_layout, layout, &block)
+end
+
+def with_compiler_development_mode(mode)
+  previous_mode = ViewComponent::Compiler.__vc_development_mode
+  ViewComponent::Compiler.__vc_development_mode = mode
+  yield
+ensure
+  ViewComponent::Compiler.__vc_development_mode = previous_mode
+end
+
+# The key of the first fragment read while the block runs. Taken from the
+# instrumentation rather than recomputed, so assertions cover the key rendering
+# actually used.
+def capture_fragment_key
+  key = nil
+  subscriber = ActiveSupport::Notifications.subscribe("read_fragment.action_controller") do |*, payload|
+    key ||= payload[:key]
+  end
+
+  yield
+  key
+ensure
+  ActiveSupport::Notifications.unsubscribe(subscriber)
+end
+
+def capture_warnings(&block)
+  [].tap do |warnings|
+    Kernel.stub(:warn, ->(msg) { warnings << msg }) do
+      yield
+    end
+  end
+end
+
+def assert_versioned_allocations(counts, &block)
+  rails_version = Rails.gem_version.segments.first(2).join(".")
+  ruby_version = RUBY_VERSION.split(".").first(2).join(".")
+  assert_allocations(count: counts.fetch([rails_version, ruby_version]), &block)
+end

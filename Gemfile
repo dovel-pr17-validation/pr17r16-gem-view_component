@@ -1,0 +1,50 @@
+# frozen_string_literal: true
+
+source "https://rubygems.org"
+gemspec
+
+rails_version = (ENV["RAILS_VERSION"] || "~> 8.1").to_s
+
+gem "rails", (rails_version == "main") ? {git: "https://github.com/rails/rails", ref: "main"} : rails_version
+
+ruby_version = (ENV["RUBY_VERSION"] || "~> 4.0").to_s
+ruby ruby_version
+
+group :development, :test do
+  gem "appraisal", "~> 2"
+  gem "appraisal-run", "~> 1.1"
+  gem "audition", require: false
+  gem "benchmark-ips", "~> 2"
+  gem "better_html"
+  gem "bundler"
+  gem "capybara", "~> 3"
+  gem "cuprite"
+  gem "dry-initializer", require: true
+  gem "erb_lint"
+  gem "haml", "~> 7"
+  gem "jbuilder", "~> 2"
+  gem "m", "~> 1"
+  gem "method_source", "~> 1"
+  gem "minitest", "~> 6"
+  gem "minitest-memory"
+  gem "minitest-mock"
+  gem "nokogiri", "1.19.4"
+  gem "propshaft", "~> 1"
+  gem "puma", ">= 6"
+  gem "rake", "~> 13"
+  gem "rails-dom-testing", "~> 2.3.0"
+  gem "reactionview"
+  gem "redis", ">= 4", "< 6"
+  gem "rspec-rails"
+  gem "rubocop-md", "~> 2"
+  gem "simplecov-console", "< 1"
+  gem "simplecov", "< 2"
+  gem "slim", "~> 5"
+  gem "sprockets-rails", "~> 3"
+  gem "standard", "~> 1"
+  gem "turbo-rails"
+  gem "warning"
+  gem "yard-activesupport-concern", "< 1"
+  gem "yard-lint", "~> 1.8"
+  gem "yard", "< 1"
+end
